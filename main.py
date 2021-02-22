@@ -145,5 +145,5 @@ if __name__ == "__main__":
                         )
                     )
                 break
-    torch.save(agent.state_dict(), f"./models/agent-final.pt")
+    torch.save(agent.state_dict(), f"./runs/agent-final.pt")
     env.close()

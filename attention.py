@@ -231,6 +231,7 @@ def spatial_softmax(A):
     A = F.softmax(A, dim=1)
     # Reshape A to original shape.
     A = A.reshape(b, h, w, d)
+    # TODO: 
     return A
 
 

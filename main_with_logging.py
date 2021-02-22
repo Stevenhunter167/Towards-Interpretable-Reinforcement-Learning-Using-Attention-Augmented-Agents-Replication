@@ -106,8 +106,11 @@ if __name__ == "__main__":
     # across different instances of the game (trajectories). I also am using
     # a different update mechanism as of now (REINFORCE vs. A3C).
 
+    
+
     for i_episode in range(config.num_episodes):
         observation = env.reset()
+        video = VideoRecord("./runs/", f"test_{i_episode}") # start recording a video
         # resets hidden states, otherwise the comp. graph history spans episodes
         # and relies on freed buffers.
         agent.reset()
@@ -124,6 +127,7 @@ if __name__ == "__main__":
                 if config.render:
                     env.render()
                 observation, _reward, done, _ = env.step(action)
+                video.record_frame(observation) # record a frame
                 reward += _reward
                 if done:
                     break
@@ -133,6 +137,7 @@ if __name__ == "__main__":
                 running_reward = 0.05 * ep_reward + (1 - 0.05) * running_reward
                 finish_episode(optimizer, policy, config)
                 Tensorboardlog.tensorboardlog(i_episode, running_reward)
+                video.savemp4() # finalize and save video
                 if i_episode % config.log_interval == 0:
                     print(
                         "Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}".format(
