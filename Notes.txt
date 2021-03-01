@@ -1,0 +1,20 @@
+
+Function Approximation: Deep Neural Network
+	ok so we want our neural network to learn to play this game,
+		but what exactly do we want it to learn? how we are going to use neural networks.
+	we want it to learn a distribution over the actions conditioned on the states,
+		or in other words, a function of state which outputs a vector of probabilities of each action
+	So during training rollouts, we can simply sample from this distribution with some exploration techniques
+		and when doing evaluation, we take the argmax over the action distributions as our greedy policy
+	so before optimizing our policy pi, we can first define what an optimal policy looks like:
+		it is the argmax over all the policies (or in deep learning scenarios: that is going to be all the possible policies that can be represented by the network)
+		argmax over policies of the expected return
+	in that case: our objective is simply approximating the optimal policy pi* using pi_theta so that it maximizes expected total reward of the entire trajectory
+
+Policy Optimization: Monte Carlo Policy Gradient
+	Our Gradient based Optimization Algorithm is Monte Carlo Policy Gradient
+	so we can define our objective from last slide, J of theta, to be equal to the expected return when following our parameterized policy, pi_theta
+	the return can be estimated by simply summing up the discounted rewards to let agent be a little greedy and focuses more on near-future rewards
+	our gradient of the objective function can be estimated from data using the policy gradient theorem, which is the expectation of the log probability of action taken times the future rewards
+	to improve our policy, our policy parameters ascend towards the gradient direction of our objective function with learning rate alpha
+
