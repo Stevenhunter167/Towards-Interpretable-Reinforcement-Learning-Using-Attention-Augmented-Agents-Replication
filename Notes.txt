@@ -14,7 +14,7 @@ Function Approximation: Deep Neural Network
 Policy Optimization: Monte Carlo Policy Gradient
 	Our Gradient based Optimization Algorithm is Monte Carlo Policy Gradient
 	so we can define our objective from last slide, J of theta, to be equal to the expected return when following our parameterized policy, pi_theta
-	the return can be estimated by simply summing up the discounted rewards to let agent be a little greedy and focuses more on near-future rewards
-	our gradient of the objective function can be estimated from data using the policy gradient theorem, which is the expectation of the log probability of action taken times the future rewards
-	to improve our policy, our policy parameters ascend towards the gradient direction of our objective function with learning rate alpha
+	the return can be estimated by simply summing up the discounted rewards # to let agent be a little greedy and focuses more on near-future rewards
+	our gradient of the objective function can be estimated from data using the policy gradient theorem #, which is the expectation of the log probability of action taken times the future rewards
+	to improve our policy, our policy parameters ascend towards the positive direction gradient direction of our objective function with learning rate alpha
 
