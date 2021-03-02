@@ -36,6 +36,13 @@ class Policy(nn.Module):
 def finish_episode(optimizer, policy, config):
     """Updates model using REINFORCE.
     """
+
+    if config.eval:
+        """ if this is an evaluation run """
+        del policy.rewards[:]
+        del policy.saved_log_probs[:]
+        return
+
     R = 0
     policy_loss = []
     returns = []
@@ -84,6 +91,17 @@ if __name__ == "__main__":
         default=250,
         help="interval between saving models.",
     )
+    parser.add_argument(
+        "--eval",
+        action="store_true",
+        help="specify if this is a evaluation run"
+    )
+    parser.add_argument(
+        "--model_path",
+        type=str,
+        default="./runs/?",
+        help="load model path"
+    )
     config = parser.parse_args()
 
     env = gym.make("Seaquest-v0")
@@ -93,6 +111,10 @@ if __name__ == "__main__":
     num_actions = env.action_space.n
     agent = attention.Agent(num_actions=num_actions)
     policy = Policy(agent=agent)
+
+    if config.eval:
+        policy.agent.load_state_dict(torch.load(config.model_path))
+
     if torch.cuda.is_available():
         policy.cuda()
 
@@ -110,15 +132,17 @@ if __name__ == "__main__":
 
     for i_episode in range(config.num_episodes):
         observation = env.reset()
-        video = VideoRecord("./runs/", f"test_{i_episode}") # start recording a video
+        video = VideoRecord("./runs/", f"test_{i_episode}_eval={config.eval}") # start recording a video
+        if config.eval:
+            video_attention = VideoRecord("./runs/", f"saliency_test_{i_episode}_eval={config.eval}") # start recording saliency
         # resets hidden states, otherwise the comp. graph history spans episodes
         # and relies on freed buffers.
         agent.reset()
         ep_reward = 0
 
         # Stash model in case of crash.
-        if i_episode % config.save_model_interval == 0 and i_episode > 0:
-            torch.save(agent.state_dict(), f"./models/agent-{i_episode}.pt")
+        if i_episode % config.save_model_interval == 0 and i_episode > 0 and (not config.eval):
+            torch.save(agent.state_dict(), f"./runs/agent-{i_episode}.pt")
 
         for t in range(config.max_steps):
             action = policy(observation)
@@ -128,6 +152,18 @@ if __name__ == "__main__":
                     env.render()
                 observation, _reward, done, _ = env.step(action)
                 video.record_frame(observation) # record a frame
+
+                if config.eval:
+                    def attention_map(saliency_map):
+                        saliency_map = (saliency_map - np.mean(saliency_map)) / np.std(saliency_map)
+                        saliency_map = (saliency_map + np.min(saliency_map)) / (np.max(saliency_map) - np.min(saliency_map)) * 255
+                        saliency_map = np.expand_dims(np.max(saliency_map, axis=2), axis=2)
+                        saliency_map = np.repeat(saliency_map, 3, axis=2)
+                        return saliency_map
+
+                    saliency_map = attention_map(policy.agent.last_attention)
+                    video_attention.record_frame(np.uint8(saliency_map))
+                
                 reward += _reward
                 if done:
                     break
@@ -137,7 +173,15 @@ if __name__ == "__main__":
                 running_reward = 0.05 * ep_reward + (1 - 0.05) * running_reward
                 finish_episode(optimizer, policy, config)
                 Tensorboardlog.tensorboardlog(i_episode, running_reward)
-                video.savemp4() # finalize and save video
+
+                if (i_episode % config.save_model_interval == 0 and i_episode > 0) or (config.eval):
+                    video.savemp4() # finalize and save video
+                else:
+                    video = None
+                
+                if config.eval:
+                    video_attention.savemp4()
+                
                 if i_episode % config.log_interval == 0:
                     print(
                         "Episode {}\tLast reward: {:.2f}\tAverage reward: {:.2f}".format(
@@ -152,5 +196,6 @@ if __name__ == "__main__":
                         )
                     )
                 break
-    torch.save(agent.state_dict(), f"./models/agent-final.pt")
+    if not config.eval:
+        torch.save(agent.state_dict(), f"./runs/agent-final.pt")
     env.close()
