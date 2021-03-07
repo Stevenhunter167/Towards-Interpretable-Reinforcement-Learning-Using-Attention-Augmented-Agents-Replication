@@ -1,15 +1,16 @@
-from utils import *
-import argparse
-import gym
-import torch
+import os, time
+model_name = os.path.split(os.getcwd())[-1]
+os.chdir("../../")
 
-import numpy as np
+import torch
 import torch.nn.functional as F
 import torch.optim as optim
 from torch import nn
+import gym, argparse
+import numpy as np
 
+import utils
 import attention
-
 
 class Policy(nn.Module):
     def __init__(self, agent):
@@ -19,13 +20,13 @@ class Policy(nn.Module):
         self.saved_log_probs = []
         self.rewards = []
 
-    def forward(self, observation):
+    def forward(self, observation, **kwargs):
         """Sample action from agents output distribution over actions.
         """
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         # Unsqueeze to give a batch size of 1.
         state = torch.from_numpy(observation).float().unsqueeze(0).to(device)
-        action_scores, _ = self.agent(state)
+        action_scores, _ = self.agent(state, **kwargs)
         action_probs = F.softmax(action_scores, dim=-1)
         dist = torch.distributions.Categorical(action_probs)
         action = dist.sample()
@@ -36,13 +37,6 @@ class Policy(nn.Module):
 def finish_episode(optimizer, policy, config):
     """Updates model using REINFORCE.
     """
-
-    if config.eval:
-        """ if this is an evaluation run """
-        del policy.rewards[:]
-        del policy.saved_log_probs[:]
-        return
-
     R = 0
     policy_loss = []
     returns = []
@@ -63,7 +57,7 @@ def finish_episode(optimizer, policy, config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num_episodes", type=int, default=10_000)
+    parser.add_argument("--num_episodes", type=int, default=5)
     parser.add_argument("--num_repeat_action", type=int, default=4)
     parser.add_argument("--reward_threshold", type=int, default=1_000)
     parser.add_argument("--max_steps", type=int, default=10_000)
@@ -88,7 +82,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save-model-interval",
         type=int,
-        default=250,
+        default=1,
         help="interval between saving models.",
     )
     parser.add_argument(
@@ -102,8 +96,9 @@ if __name__ == "__main__":
         default="./runs/?",
         help="load model path"
     )
+    
     config = parser.parse_args()
-
+    
     env = gym.make("Seaquest-v0")
     torch.manual_seed(config.seed)
     env.seed(config.seed)
@@ -111,10 +106,6 @@ if __name__ == "__main__":
     num_actions = env.action_space.n
     agent = attention.Agent(num_actions=num_actions)
     policy = Policy(agent=agent)
-
-    if config.eval:
-        policy.agent.load_state_dict(torch.load(config.model_path))
-
     if torch.cuda.is_available():
         policy.cuda()
 
@@ -128,59 +119,58 @@ if __name__ == "__main__":
     # across different instances of the game (trajectories). I also am using
     # a different update mechanism as of now (REINFORCE vs. A3C).
 
-    
+    if config.eval:
+        policy.load_state_dict(torch.load(config.model_path))
+
+    if torch.cuda.is_available():
+        policy.cuda()
+
+    if not os.path.exists(f"runs/{model_name}"):
+        os.makedirs(f"runs/{model_name}")
+        
+    current_time = time.strftime("%Y-%m-%d-%H-%M-%S", time.localtime(time.time()))
+    if not os.path.exists(f"runs/{model_name}/{current_time}"):
+        os.makedirs(f"runs/{model_name}/{current_time}")
+        os.makedirs(f"runs/{model_name}/{current_time}/model")
+        os.makedirs(f"runs/{model_name}/{current_time}/attention")
+        os.makedirs(f"runs/{model_name}/{current_time}/observation")
 
     for i_episode in range(config.num_episodes):
         observation = env.reset()
-        video = VideoRecord("./runs/", f"test_{i_episode}_eval={config.eval}") # start recording a video
-        if config.eval:
-            video_attention = VideoRecord("./runs/", f"saliency_test_{i_episode}_eval={config.eval}") # start recording saliency
+        
+        attention_video = utils.VideoRecord(f"runs/{model_name}/{current_time}/attention/", f"attention-{i_episode}")
+        observation_video = utils.VideoRecord(f"runs/{model_name}/{current_time}/observation/", f"observation-{i_episode}")
+        
         # resets hidden states, otherwise the comp. graph history spans episodes
         # and relies on freed buffers.
         agent.reset()
         ep_reward = 0
 
         # Stash model in case of crash.
-        if i_episode % config.save_model_interval == 0 and i_episode > 0 and (not config.eval):
-            torch.save(agent.state_dict(), f"./runs/agent-{i_episode}.pt")
-
+        if i_episode % config.save_model_interval == 0 and i_episode > 0:
+            torch.save(agent.state_dict(), f"runs/{model_name}/{current_time}/model/agent-{i_episode}.pt")
+        
         for t in range(config.max_steps):
-            action = policy(observation)
+            action = policy(observation, video_recoder = attention_video)
             reward = 0.0
             for _ in range(config.num_repeat_action):
                 if config.render:
                     env.render()
                 observation, _reward, done, _ = env.step(action)
-                video.record_frame(observation) # record a frame
-
-                if config.eval:
-                    def attention_map(saliency_map):
-                        saliency_map = (saliency_map - np.mean(saliency_map)) / np.std(saliency_map)
-                        saliency_map = (saliency_map + np.min(saliency_map)) / (np.max(saliency_map) - np.min(saliency_map)) * 255
-                        saliency_map = np.expand_dims(np.max(saliency_map, axis=2), axis=2)
-                        saliency_map = np.repeat(saliency_map, 3, axis=2)
-                        return saliency_map
-
-                    saliency_map = attention_map(policy.agent.last_attention)
-                    video_attention.record_frame(np.uint8(saliency_map))
-                
+                observation_video.record_frame(observation)
                 reward += _reward
                 if done:
                     break
             policy.rewards.append(reward)
             ep_reward += reward
+            
             if done:
                 running_reward = 0.05 * ep_reward + (1 - 0.05) * running_reward
                 finish_episode(optimizer, policy, config)
-                Tensorboardlog.tensorboardlog(i_episode, running_reward)
 
-                if (i_episode % config.save_model_interval == 0 and i_episode > 0) or (config.eval):
-                    video.savemp4() # finalize and save video
-                else:
-                    video = None
-                
-                if config.eval:
-                    video_attention.savemp4()
+                utils.Tensorboardlog.tensorboardlog(i_episode, running_reward)
+                observation_video.savemp4()
+                attention_video.savemp4()
                 
                 if i_episode % config.log_interval == 0:
                     print(
@@ -196,6 +186,5 @@ if __name__ == "__main__":
                         )
                     )
                 break
-    if not config.eval:
-        torch.save(agent.state_dict(), f"./runs/agent-final.pt")
+    torch.save(agent.state_dict(), f"runs/{model_name}/{current_time}/model/agent-final.pt")
     env.close()

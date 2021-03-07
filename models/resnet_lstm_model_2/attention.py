@@ -217,18 +217,20 @@ class VisionNetwork(nn.Module):
                 padding=2,  # Padding s.t. the output shapes match the paper.
             ),
         )
+        self.vision_lstm = ConvLSTMCell(input_channels=128, hidden_channels=128, kernel_size=3)
         self.resnet = nn.Sequential(ResBlock(channel=64),
                                     ResBlock(channel=64),
                                     ResStrideBlock(in_channel=64, out_channel=128),
                                     ResBlock(channel=128))
 
-    # def reset(self):
-    #     self.vision_lstm.reset()
+    def reset(self):
+        self.vision_lstm.reset()
 
     def forward(self, X):
         X = X.transpose(1, 3)
         O = self.vision_cnn(X)
         O = self.resnet(O)
+        x, _ = self.vision_lstm(O )
         return O.transpose(1, 3)
 
 
@@ -236,20 +238,18 @@ class ResLSTM(nn.Module):
     def __init__(self):
         super(ResLSTM, self).__init__()
         self.conv1 = nn.Conv2d(in_channels=4, out_channels=1, kernel_size=1, stride=1, padding=0)
-        self.vision_lstm = ConvLSTMCell(input_channels=128, hidden_channels=128, kernel_size=3)
         self.resnet = nn.Sequential(ResStrideBlock(in_channel=128, out_channel=256),
                                     ResBlock(channel=256),
                                     ResStrideBlock(in_channel=256, out_channel=512),
                                     ResBlock(channel=512))
         self.answer = nn.Sequential(nn.Flatten(), nn.Linear(6144, 4096), nn.Linear(4096, 2048))
 
-    def reset(self):
-        self.vision_lstm.reset()
+    # def reset(self):
+    #     self.vision_lstm.reset()
 
     def forward(self, O, A):
         # print(self.conv1(A).shape)
-        x, _ = self.vision_lstm(O * self.conv1(A))
-        x = self.resnet(x)
+        x = self.resnet(O * self.conv1(A))
         # print(nn.Flatten()(x).shape)
         return self.answer(x).reshape(1, 2048)
 
@@ -358,11 +358,12 @@ class Agent(nn.Module):
         self.values_head = nn.Sequential(nn.Linear(hidden_size, num_actions))
 
     def reset(self):
-        self.reslstm.reset()
+        # self.reslstm.reset()
+        self.vision.reset()
         self.prev_output = None
         self.prev_hidden = None
 
-    def forward(self, X, prev_reward=None, prev_action=None):
+    def forward(self, X, prev_reward=None, prev_action=None, video_recoder=None):
 
         # 0. Setup.
         # ---------
@@ -405,6 +406,13 @@ class Agent(nn.Module):
 
         # (n, h, w, num_queries)
         A = spatial_softmax(A)
+        
+        if video_recoder is not None:
+            A_numpy = A.reshape((14, 10, 4)).sum(2).reshape(14, 10, 1).repeat(1, 1, 3).detach().cpu().numpy()
+            A_numpy = (A_numpy - np.min(A_numpy)) / (np.max(A_numpy) - np.min(A_numpy))
+            A_numpy *= 255
+            A_numpy = np.round(A_numpy).astype(np.uint8)
+            video_recoder.record_frame(A_numpy)
 
         # print(A.shape)
         # (n, 1, 1, num_queries)
