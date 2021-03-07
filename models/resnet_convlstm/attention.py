@@ -124,82 +124,105 @@ class VisionNetwork(nn.Module):
         O, _ = self.conv_lstm(self.vision_cnn(X))
         return O
 
-class ChannelWiseAttentionLayer(nn.Module):
-    def __init__(self, channel, reduction, multiply=True):
-        super(ChannelWiseAttentionLayer, self).__init__()
-        self.multiply = multiply
-        self.avgPooling = nn.AdaptiveAvgPool2d(1)
-        self.maxPooling = nn.AdaptiveMaxPool2d(1)
-        self.mfc = nn.Sequential(
-            nn.Linear(channel, channel // reduction),
-            nn.ReLU(inplace=True),
-            nn.Linear(channel // reduction, channel),
-        )
-    
-    def forward(self, observation):
-        batch, channel, _, _ = observation.size()
-        
-        maxPooling = self.maxPooling(observation).view(batch, channel)
-        avgPooling = self.avgPooling(observation).view(batch, channel)
-        
-        maxAttention = self.mfc(maxPooling).view(batch, channel, 1, 1)
-        avgAttention = self.mfc(avgPooling).view(batch, channel, 1, 1)
-        
-        channelAttention = torch.sigmoid(maxAttention + avgAttention)
-        
-        if self.multiply:
-            return observation * channelAttention
-        else:
-            return channelAttention
 
-class SpatialWiseAttentionLayer(nn.Module):
-    def __init__(self):
-        super(SpatialWiseAttentionLayer, self).__init__()
-        
-        self.maxPooling = nn.MaxPool2d(kernel_size=(4, 4), stride=2, padding=2)
-        self.avgPooling = nn.AvgPool2d(kernel_size=(4, 4), stride=2, padding=2)
-        self.spatialAttention = nn.Sequential(
-            nn.Conv2d(in_channels=128, out_channels=64, kernel_size=1, stride=1, padding=0),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(in_channels=64, out_channels=64, kernel_size=1, stride=1, padding=0),
-            # nn.Sigmoid()
-        )
+# class ChannelWiseAttentionLayer(nn.Module):
+#     def __init__(self, channel, reduction, multiply=True):
+#         super(ChannelWiseAttentionLayer, self).__init__()
+#         self.multiply = multiply
+#         self.avgPooling = nn.AdaptiveAvgPool2d(1)
+#         self.maxPooling = nn.AdaptiveMaxPool2d(1)
+#         self.mfc = nn.Sequential(
+#             nn.Linear(channel, channel // reduction),
+#             nn.ReLU(inplace=True),
+#             nn.Linear(channel // reduction, channel),
+#         )
+#
+#     def forward(self, observation):
+#         batch, channel, _, _ = observation.size()
+#
+#         maxPooling = self.maxPooling(observation).view(batch, channel)
+#         avgPooling = self.avgPooling(observation).view(batch, channel)
+#
+#         maxAttention = self.mfc(maxPooling).view(batch, channel, 1, 1)
+#         avgAttention = self.mfc(avgPooling).view(batch, channel, 1, 1)
+#
+#         channelAttention = torch.sigmoid(maxAttention + avgAttention)
+#
+#         if self.multiply:
+#             return observation * channelAttention
+#         else:
+#             return channelAttention
+#
+# class SpatialWiseAttentionLayer(nn.Module):
+#     def __init__(self):
+#         super(SpatialWiseAttentionLayer, self).__init__()
+#
+#         self.maxPooling = nn.MaxPool2d(kernel_size=(4, 4), stride=2, padding=2)
+#         self.avgPooling = nn.AvgPool2d(kernel_size=(4, 4), stride=2, padding=2)
+#         self.spatialAttention = nn.Sequential(
+#             nn.Conv2d(in_channels=128, out_channels=64, kernel_size=1, stride=1, padding=0),
+#             nn.ReLU(inplace=True),
+#             nn.Conv2d(in_channels=64, out_channels=64, kernel_size=1, stride=1, padding=0),
+#             # nn.Sigmoid()
+#         )
+#
+#
+#     def forward(self, observation):
+#         # in : 1 * 64 * 52 * 39
+#         # out : 1 *  64 *  27 * 20
+#
+#         maxPooling = self.maxPooling(observation)
+#         avgPooling = self.avgPooling(observation)
+#
+#         current_attention = torch.cat([maxPooling, avgPooling], dim=1)
+#         attention = self.spatialAttention(current_attention)
+#
+#         return attention
 
 
-    def forward(self, observation):
-        # in : 1 * 64 * 52 * 39
-        # out : 1 *  64 *  27 * 20
-        
-        maxPooling = self.maxPooling(observation)
-        avgPooling = self.avgPooling(observation)
-        
-        current_attention = torch.cat([maxPooling, avgPooling], dim=1)
-        attention = self.spatialAttention(current_attention)
-        
-        return attention
+# class AttentionCore(nn.Module):
+#     def __init__(self):
+#         super(AttentionCore, self).__init__()
+#
+#         self.channelAttention = ChannelWiseAttentionLayer(64, 2)
+#         self.spatialAttention = SpatialWiseAttentionLayer()
+#         self.attention_layer = nn.Sequential(
+#             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=1, stride=1, padding=0),
+#             nn.Sigmoid()
+#         )
+#
+#     # @profile
+#     def forward(self, observation, last_attention):
+#         # in : 1 * 64 * 52 * 39
+#         # out : 1 * 64 *  27 * 20
+#
+#         channelAttention = self.channelAttention(observation)
+#         spatialAttention = self.spatialAttention(channelAttention)
+#         attention = spatialAttention + last_attention
+#         attention = self.attention_layer(attention)
+#
+#         return attention
 
 
 class AttentionCore(nn.Module):
     def __init__(self):
         super(AttentionCore, self).__init__()
         
-        self.channelAttention = ChannelWiseAttentionLayer(64, 2)
-        self.spatialAttention = SpatialWiseAttentionLayer()
+        self.maxPooling = nn.MaxPool2d(kernel_size=(4, 4), stride=2, padding=2)
+        self.avgPooling = nn.AvgPool2d(kernel_size=(4, 4), stride=2, padding=2)
         self.attention_layer = nn.Sequential(
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=1, stride=1, padding=0),
-            nn.Sigmoid()
+            nn.Conv2d(in_channels=128, out_channels=128, kernel_size=1, stride=1, padding=0),
+            nn.BatchNorm2d(128),
+            nn.ReLU()
         )
     
     # @profile
     def forward(self, observation, last_attention):
         # in : 1 * 64 * 52 * 39
-        # out : 1 * 64 *  27 * 20
-        
-        channelAttention = self.channelAttention(observation)
-        spatialAttention = self.spatialAttention(channelAttention)
-        attention = spatialAttention + last_attention
-        attention = self.attention_layer(attention)
-        
+        # out : 1 * 128 *  27 * 20
+        current_attention = self.maxPooling(observation) + self.avgPooling(observation)
+        attention = self.attention_layer(current_attention * last_attention)
         return attention
 
 
@@ -248,7 +271,7 @@ class Agent(nn.Module):
         self.resNet18 = ResNet18()
         self.policy_core = nn.LSTMCell(hidden_size, hidden_size)
         
-        self.answer_processor = nn.Sequential(nn.Linear(2048, 512),nn.ReLU(),nn.Linear(512, hidden_size),)
+        self.answer_processor = nn.Sequential(nn.Linear(2048, 512), nn.ReLU(), nn.Linear(512, hidden_size), )
         
         self.policy_head = nn.Sequential(nn.Linear(hidden_size, num_actions))
         self.values_head = nn.Sequential(nn.Linear(hidden_size, num_actions))
@@ -262,32 +285,30 @@ class Agent(nn.Module):
         self.prev_hidden = None
     
     # @profile
-    def forward(self, X, video_recoder=None):         #X : 1, 210, 160, 3
+    def forward(self, X, video_recoder=None):  # X : 1, 210, 160, 3
         
         # 0. Setup.
         # ---------
         batch_size = X.size()[0]
-
-
-            
+        
         if self.prev_output is None:
             hidden_state = torch.zeros(batch_size, self.hidden_size, requires_grad=True).to(X.device)
             self.prev_output = hidden_state
         
-        #Vision
+        # Vision
         # --------------
-        X = X.transpose(1, 3).transpose(2,3)        #X: 1, 3, 210. 160
-        O = self.vision(X)            #O: 1, 64, 52, 39
+        X = X.transpose(1, 3).transpose(2, 3)  # X: 1, 3, 210. 160
+        O = self.vision(X)  # O: 1, 64, 52, 39
         
         # Attention
         if self.attention_lstm.prev_hidden is None:
-            L_A = torch.ones((1,64, 27, 20), requires_grad=True).to(X.device)
+            L_A = torch.ones((1, 64, 27, 20), requires_grad=True).to(X.device)
         else:
             L_A, _ = self.attention_lstm.prev_hidden
         
-        A = self.attention_core(O, L_A)  #A: 1, 128, 27, 20
-        self.attention_lstm(A)   #L_A: 1, 64, 27, 20
-
+        A = self.attention_core(O, L_A)  # A: 1, 128, 27, 20
+        self.attention_lstm(A)  # L_A: 1, 64, 27, 20
+        
         if video_recoder is not None:
             A_numpy = A.reshape(128, 27, 20).sum(0).reshape(27, 20, 1).repeat(1, 1, 3).detach().cpu().numpy()
             A_numpy = (A_numpy - np.min(A_numpy)) / (np.max(A_numpy) - np.min(A_numpy))
