@@ -58,7 +58,7 @@ def finish_episode(optimizer, policy, config):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num_episodes", type=int, default=5)
+    parser.add_argument("--num_episodes", type=int, default=1000)
     parser.add_argument("--num_repeat_action", type=int, default=4)
     parser.add_argument("--reward_threshold", type=int, default=1_000)
     parser.add_argument("--max_steps", type=int, default=10_000)
@@ -83,7 +83,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--save-model-interval",
         type=int,
-        default=1,
+        default=50,
         help="interval between saving models.",
     )
     parser.add_argument(

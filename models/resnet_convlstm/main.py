@@ -65,7 +65,7 @@ torch.autograd.set_detect_anomaly(True)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--num_episodes", type=int, default=5)
+    parser.add_argument("--num_episodes", type=int, default=1000)
     parser.add_argument("--num_repeat_action", type=int, default=4)
     parser.add_argument("--reward_threshold", type=int, default=1_000)
     parser.add_argument("--max_steps", type=int, default=10_000)
@@ -77,7 +77,7 @@ if __name__ == "__main__":
                         help="render the environment")
     parser.add_argument("--log-interval", type=int, default=1, metavar="N",
                         help="interval between training status logs (default: 10)", )
-    parser.add_argument("--save-model-interval", type=int, default=1,
+    parser.add_argument("--save-model-interval", type=int, default=50,
                         help="interval between saving models.", )
     parser.add_argument("--eval", action="store_true", help="specify if this is a evaluation run")
     parser.add_argument("--model_path", type=str, default="./runs/?", help="load model path")
